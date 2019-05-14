@@ -45,11 +45,11 @@ module Amimono
     end
 
     def self.patch_copy_resources_script(installer)
-      project = installer.sandbox.project
+      project_path = installer.sandbox.project_path
       aggregated_targets = installer.aggregate_targets
       aggregated_targets.each do |aggregated_target|
         path = aggregated_target.copy_resources_script_path
-        resources = resources_by_config(aggregated_target, project)
+        resources = resources_by_config(aggregated_target, project_path)
         generator = Pod::Generator::CopyResourcesScript.new(resources, aggregated_target.platform)
         generator.save_as(path)
         puts "[Amimono] Copy resources script patched for target #{aggregated_target.label}"
@@ -57,11 +57,11 @@ module Amimono
     end
 
     def self.patch_embed_frameworks_script(installer)
-      project = installer.sandbox.project
+      project_path = installer.sandbox.project_path
       aggregated_targets = installer.aggregate_targets
       aggregated_targets.each do |aggregated_target|
         path = aggregated_target.embed_frameworks_script_path
-        frameworks = frameworks_by_config(aggregated_target, project)
+        frameworks = frameworks_by_config(aggregated_target, project_path)
         generator = Pod::Generator::EmbedFrameworksScript.new(frameworks)
         generator.save_as(path)
         puts "[Amimono] Embed frameworks script patched for target #{aggregated_target.label}"
@@ -80,12 +80,13 @@ module Amimono
 
     # Copied over from https://github.com/CocoaPods/CocoaPods/blob/master/lib/cocoapods/installer/xcode/pods_project_generator/aggregate_target_installer.rb#L115-L131
     # with some modifications to this particular use case
-    def self.resources_by_config(aggregated_target, project)
+    def self.resources_by_config(aggregated_target, project_path)
       aggregated_target.user_build_configurations.keys.each_with_object({}) do |config, resources_by_config|
         resources_by_config[config] = aggregated_target.pod_targets.flat_map do |library_target|
-          next [] unless library_target.include_in_build_config?(aggregated_target.target_definition, config)
+          # TODO, ignore
+          # next [] unless library_target.include_in_build_config?(aggregated_target.target_definition, config)
           resource_paths = library_target.file_accessors.flat_map do |accessor|
-            accessor.resources.flat_map { |res| res.relative_path_from(project.path.dirname) }
+            accessor.resources.flat_map { |res| res.relative_path_from(project_path.dirname) }
           end
           resource_bundles = library_target.file_accessors.flat_map do |accessor|
             accessor.resource_bundles.keys.map { |name| "#{library_target.configuration_build_dir}/#{name.shellescape}.bundle" }
@@ -98,15 +99,17 @@ module Amimono
 
     # Copied over from https://github.com/CocoaPods/CocoaPods/blob/1-2-stable/lib/cocoapods/installer/xcode/pods_project_generator/aggregate_target_installer.rb#L161-L171
     # with some modifications to this particular use case
-    def self.frameworks_by_config(aggregated_target, project)
+    def self.frameworks_by_config(aggregated_target, project_path)
       frameworks_by_config = {}
       aggregated_target.user_build_configurations.keys.each do |config|
         relevant_pod_targets = aggregated_target.pod_targets.select do |pod_target|
-          pod_target.include_in_build_config?(aggregated_target.target_definition, config)
+          # pod_target.include_in_build_config?(aggregated_target.target_definition, config)
+          # TODO, ignore
+          true
         end
         frameworks_by_config[config] = relevant_pod_targets.flat_map do |pod_target|
           frameworks = pod_target.file_accessors.flat_map(&:vendored_dynamic_artifacts).map do |framework_path|
-            relative_path = framework_path.relative_path_from(project.path.dirname)
+            relative_path = framework_path.relative_path_from(project_path.dirname)
             if Gem::Version.new(Pod::VERSION) > Gem::Version.new('1.2.1')
               framework = { 
                 :name => framework_path.basename.to_s,
@@ -120,7 +123,15 @@ module Amimono
                 framework[:dsym_input_path] = "${PODS_ROOT}/#{relative_path}.dSYM"
                 framework[:dsym_output_path] = "${DWARF_DSYM_FOLDER_PATH}/#{dsym_name}"
               end
-              framework
+
+              if Gem::Version.new(Pod::VERSION) < Gem::Version.new('1.6.0')
+                framework
+              else
+                ::Pod::Target::FrameworkPaths.new(
+                  framework[:input_path],
+                  framework[:dsym_output_path]
+                )
+              end
             else
               "${PODS_ROOT}/#{relative_path}"
             end

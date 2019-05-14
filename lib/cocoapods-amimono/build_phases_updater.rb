@@ -49,10 +49,14 @@ module Amimono
     def generate_filelist_script(installer_context, aggregated_target)
       dependencies = []
       installer_context.pods_project.targets.select { |target| target.name == aggregated_target.cocoapods_target_label }.first.dependencies.each do |dependency|
-        case dependency.target.product_type
-        when 'com.apple.product-type.framework'
-          dependencies << "'#{dependency.name}'"
-        when 'com.apple.product-type.bundle'
+        if dependency.target.respond_to?(:product_type)
+          case dependency.target.product_type
+          when 'com.apple.product-type.framework'
+            dependencies << "'#{dependency.name}'"
+          when 'com.apple.product-type.bundle'
+            # ignore
+          end
+        else
           # ignore
         end
       end
